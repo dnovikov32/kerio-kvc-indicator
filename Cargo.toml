@@ -1,0 +1,17 @@
+[package]
+name = "kerio-kvc-indicator"
+version = "0.1.0"
+edition = "2021"
+description = "Tray indicator to start/stop Kerio VPN client on Linux."
+repository = "https://github.com/dnovikov32/kerio-kvc-indicator"
+
+[dependencies]
+tao = { version = "0.19.1", default-features = false, features = ["tray"] }
+libappindicator = { version = "0.8.0", optional = true }
+image = { version = "0.24", default-features = false, features = ["png"] }
+env_logger = "0.9"
+systemctl = "0.1.9"
+
+[features]
+default = ["tray"]
+tray = ["libappindicator"]
