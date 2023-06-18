@@ -82,22 +82,64 @@ impl Icon {
     }
 }
 
+struct MenuItem {
+    started_title: String,
+    stopped_title: String
+}
+
+impl MenuItem {
+    fn actual_title(&self, status: String) -> &String {
+        match status.as_str() {
+            "stopped" => &self.stopped_title,
+            "started" => &self.started_title,
+            _ => &self.stopped_title,
+        }
+    }
+}
+
+struct MenuItemList {
+    status: MenuItem,
+    action: MenuItem
+}
+
+impl MenuItemList {
+    fn new() -> Self {
+        MenuItemList {
+            status: MenuItem {
+                stopped_title: String::from("Status: Started"),
+                started_title: String::from("Status: Stopped")
+            },
+            action: MenuItem {
+                stopped_title: String::from("Stop kerio-kvc service"),
+                started_title: String::from("Start kerio-kvc service")
+            }
+        }
+    }
+}
+
 
 fn main() {
     env_logger::init();
-    let event_loop = EventLoop::new();
 
+    let event_loop = EventLoop::new();
     let mut tray_menu = Menu::new();
     let service = Service::new();
     let icon = Icon::new();
+    let menu_item_list = MenuItemList::new();
 
-    let status_menu_title = if service.is_active() { "Status: Started" } else { "Status: Stopped" };
     let mut status_menu_item = tray_menu
-        .add_item(MenuItemAttributes::new(status_menu_title));
+        .add_item(MenuItemAttributes::new(
+            menu_item_list
+                .status
+                .actual_title(service.status())
+        ));
 
-    let action_menu_title = if service.is_active() { "Stop kerio-kvc service" } else { "Start kerio-kvc service" };
     let mut action_menu_item = tray_menu
-        .add_item(MenuItemAttributes::new(action_menu_title));
+        .add_item(MenuItemAttributes::new(
+            menu_item_list
+                .action
+                .actual_title(service.status())
+        ));
 
     let quit_menu_item = tray_menu
         .add_item(MenuItemAttributes::new("Quit"));
