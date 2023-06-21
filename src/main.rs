@@ -26,13 +26,6 @@ impl Service  {
         systemctl::is_active(&self.name).unwrap()
     }
 
-    fn status(&self) -> String {
-        match self.is_active() {
-            true => String::from("started"),
-            false => String::from("stopped")
-        }
-    }
-
     fn stop(&self) -> ExitStatus {
         systemctl::stop(&self.name).unwrap()
     }
@@ -56,11 +49,10 @@ impl Icon {
         }
     }
 
-    fn actual(&self, status: String) -> tao::system_tray::Icon {
-        match status.as_str() {
-            "stopped" => self.stopped.clone(),
-            "started" => self.started.clone(),
-            _ => self.stopped.clone(),
+    fn actual(&self, status: bool) -> tao::system_tray::Icon {
+        match status {
+            true => self.started.clone(),
+            false => self.stopped.clone()
         }
     }
 
@@ -88,11 +80,10 @@ struct MenuItem {
 }
 
 impl MenuItem {
-    fn actual_title(&self, status: String) -> &String {
-        match status.as_str() {
-            "stopped" => &self.stopped_title,
-            "started" => &self.started_title,
-            _ => &self.stopped_title,
+    fn actual_title(&self, status: bool) -> &String {
+        match status {
+            true => &self.started_title,
+            false => &self.stopped_title
         }
     }
 }
@@ -106,12 +97,12 @@ impl MenuItemList {
     fn new() -> Self {
         MenuItemList {
             status: MenuItem {
-                stopped_title: String::from("Status: Started"),
-                started_title: String::from("Status: Stopped")
+                stopped_title: String::from("Status: Stopped"),
+                started_title: String::from("Status: Started")
             },
             action: MenuItem {
-                stopped_title: String::from("Stop kerio-kvc service"),
-                started_title: String::from("Start kerio-kvc service")
+                stopped_title: String::from("Start kerio-kvc service"),
+                started_title: String::from("Stop kerio-kvc service")
             }
         }
     }
@@ -126,25 +117,26 @@ fn main() {
     let service = Service::new();
     let icon = Icon::new();
     let menu_item_list = MenuItemList::new();
+    let is_active = service.is_active();
 
     let mut status_menu_item = tray_menu
         .add_item(MenuItemAttributes::new(
             menu_item_list
                 .status
-                .actual_title(service.status())
+                .actual_title(is_active)
         ));
 
     let mut action_menu_item = tray_menu
         .add_item(MenuItemAttributes::new(
             menu_item_list
                 .action
-                .actual_title(service.status())
+                .actual_title(is_active)
         ));
 
     let quit_menu_item = tray_menu
         .add_item(MenuItemAttributes::new("Quit"));
 
-    let mut system_tray = SystemTrayBuilder::new(icon.actual(service.status()), Some(tray_menu))
+    let mut system_tray = SystemTrayBuilder::new(icon.actual(is_active), Some(tray_menu))
         .with_id(TrayId::new("main-tray"))
         .with_temp_icon_dir(std::path::Path::new("/tmp/kerio-kvc-indicator"))
         .build(&event_loop)
@@ -163,27 +155,47 @@ fn main() {
                 if menu_id == quit_menu_item.clone().id() {
                     *control_flow = ControlFlow::Exit;
                 } else if menu_id == action_menu_item.clone().id() {
-                    if service.is_active() {
-                        service.stop();
-                        status_menu_item.set_title("Status: Stopped");
-                        action_menu_item.set_title("Start kerio-kvc service");
-                        SystemTray::set_icon(&mut system_tray, icon.stopped.clone());
+                    let is_active = service.is_active();
+                    let status;
+
+                    if is_active {
+                        status = service.stop();
                     } else {
-                        service.restart();
-                        status_menu_item.set_title("Status: Started");
-                        action_menu_item.set_title("Stop kerio-kvc service");
-                        SystemTray::set_icon(&mut system_tray, icon.started.clone());
+                        status = service.restart();
                     }
+
+                    if status.success() {
+                        status_menu_item.set_title(
+                            menu_item_list
+                                .status
+                                .actual_title(!is_active)
+                        );
+
+                        action_menu_item.set_title(
+                            menu_item_list
+                                .action
+                                .actual_title(!is_active)
+                        );
+
+                        SystemTray::set_icon(&mut system_tray, icon.actual(!is_active));
+                    }
+
                 } else if menu_id == status_menu_item.clone().id() {
-                    if service.is_active() {
-                        status_menu_item.set_title("Status: Started");
-                        action_menu_item.set_title("Stop kerio-kvc service");
-                        SystemTray::set_icon(&mut system_tray, icon.started.clone());
-                    } else {
-                        status_menu_item.set_title("Status: Stopped");
-                        action_menu_item.set_title("Start kerio-kvc service");
-                        SystemTray::set_icon(&mut system_tray, icon.stopped.clone());
-                    }
+                    let is_active = service.is_active();
+
+                    status_menu_item.set_title(
+                        menu_item_list
+                            .status
+                            .actual_title(is_active)
+                    );
+
+                    action_menu_item.set_title(
+                        menu_item_list
+                            .action
+                            .actual_title(is_active)
+                    );
+
+                    SystemTray::set_icon(&mut system_tray, icon.actual(is_active));
                 }
             },
             _ => (),
