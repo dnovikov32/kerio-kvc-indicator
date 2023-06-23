@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::process::ExitStatus;
 use systemctl;
 use tao::system_tray::SystemTray;
@@ -75,39 +76,47 @@ impl Icon {
 }
 
 struct MenuItem {
-    started_title: String,
-    stopped_title: String
+    active_title: &'static str,
+    inactive_title: &'static str
 }
 
 impl MenuItem {
-    fn actual_title(&self, status: bool) -> &String {
-        match status {
-            true => &self.started_title,
-            false => &self.stopped_title
+    fn new(active_title: &'static str, inactive_title: &'static str) -> Self {
+        Self {
+            active_title,
+            inactive_title
+        }
+    }
+
+    fn get_actual_title(&self, is_active: bool) -> &str {
+        match is_active {
+            true => &self.active_title,
+            false => &self.inactive_title
         }
     }
 }
 
-struct MenuItemList {
-    status: MenuItem,
-    action: MenuItem
+
+struct MenuItemCollection {
+    items: HashMap<&'static str, MenuItem>
 }
 
-impl MenuItemList {
+impl MenuItemCollection {
     fn new() -> Self {
-        MenuItemList {
-            status: MenuItem {
-                stopped_title: String::from("Status: Stopped"),
-                started_title: String::from("Status: Started")
-            },
-            action: MenuItem {
-                stopped_title: String::from("Start kerio-kvc service"),
-                started_title: String::from("Stop kerio-kvc service")
-            }
+        Self {
+            items: HashMap::new()
         }
     }
-}
 
+    fn add_item(&mut self, key: &'static str, menu_item: MenuItem) {
+        self.items.insert(key, menu_item);
+    }
+
+    fn get_actual_title(&self, key: &'static str, is_active: bool) -> &str {
+        let menu_item = self.items.get(key).expect("Menu item not found");
+        menu_item.get_actual_title(is_active)
+    }
+}
 
 fn main() {
     env_logger::init();
@@ -116,25 +125,27 @@ fn main() {
     let mut tray_menu = Menu::new();
     let service = Service::new();
     let icon = Icon::new();
-    let menu_item_list = MenuItemList::new();
     let is_active = service.is_active();
+
+    let mut menu_items = MenuItemCollection::new();
+    menu_items.add_item("status", MenuItem::new("Status: Started", "Status: Stopped"));
+    menu_items.add_item("action", MenuItem::new("Stop kerio-kvc service", "Start kerio-kvc service"));
+    menu_items.add_item("quit", MenuItem::new("Quit", "Quit"));
 
     let mut status_menu_item = tray_menu
         .add_item(MenuItemAttributes::new(
-            menu_item_list
-                .status
-                .actual_title(is_active)
+            menu_items.get_actual_title("status", is_active)
         ));
 
     let mut action_menu_item = tray_menu
         .add_item(MenuItemAttributes::new(
-            menu_item_list
-                .action
-                .actual_title(is_active)
+            menu_items.get_actual_title("action", is_active)
         ));
 
     let quit_menu_item = tray_menu
-        .add_item(MenuItemAttributes::new("Quit"));
+        .add_item(MenuItemAttributes::new(
+            menu_items.get_actual_title("quit", is_active)
+        ));
 
     let mut system_tray = SystemTrayBuilder::new(icon.actual(is_active), Some(tray_menu))
         .with_id(TrayId::new("main-tray"))
@@ -166,15 +177,11 @@ fn main() {
 
                     if status.success() {
                         status_menu_item.set_title(
-                            menu_item_list
-                                .status
-                                .actual_title(!is_active)
+                            menu_items.get_actual_title("status", !is_active)
                         );
 
                         action_menu_item.set_title(
-                            menu_item_list
-                                .action
-                                .actual_title(!is_active)
+                            menu_items.get_actual_title("action", !is_active)
                         );
 
                         SystemTray::set_icon(&mut system_tray, icon.actual(!is_active));
@@ -184,15 +191,11 @@ fn main() {
                     let is_active = service.is_active();
 
                     status_menu_item.set_title(
-                        menu_item_list
-                            .status
-                            .actual_title(is_active)
+                        menu_items.get_actual_title("status", is_active)
                     );
 
                     action_menu_item.set_title(
-                        menu_item_list
-                            .action
-                            .actual_title(is_active)
+                        menu_items.get_actual_title("action", is_active)
                     );
 
                     SystemTray::set_icon(&mut system_tray, icon.actual(is_active));
