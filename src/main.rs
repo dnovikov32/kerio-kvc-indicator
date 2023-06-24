@@ -10,6 +10,7 @@ use tao::{
     system_tray::SystemTrayBuilder,
     TrayId,
 };
+use tao::menu::{CustomMenuItem, MenuId};
 
 
 struct Service {
@@ -76,13 +77,22 @@ impl Icon {
 }
 
 struct MenuItem {
+    current_menu_item: CustomMenuItem,
+    menu_name: &'static str,
     active_title: &'static str,
     inactive_title: &'static str
 }
 
 impl MenuItem {
-    fn new(active_title: &'static str, inactive_title: &'static str) -> Self {
+    fn new(
+        current_menu_item: CustomMenuItem,
+        menu_name: &'static str,
+        active_title: &'static str,
+        inactive_title: &'static str
+    ) -> Self {
         Self {
+            current_menu_item,
+            menu_name,
             active_title,
             inactive_title
         }
@@ -96,9 +106,8 @@ impl MenuItem {
     }
 }
 
-
 struct MenuItemCollection {
-    items: HashMap<&'static str, MenuItem>
+    items: HashMap<MenuId, MenuItem>
 }
 
 impl MenuItemCollection {
@@ -108,14 +117,25 @@ impl MenuItemCollection {
         }
     }
 
-    fn add_item(&mut self, key: &'static str, menu_item: MenuItem) {
-        self.items.insert(key, menu_item);
+    fn add_item(&mut self, menu_item: MenuItem) {
+        let menu_id = menu_item.current_menu_item.clone().id();
+        self.items.insert(menu_id, menu_item);
     }
 
-    fn get_actual_title(&self, key: &'static str, is_active: bool) -> &str {
-        let menu_item = self.items.get(key).expect("Menu item not found");
-        menu_item.get_actual_title(is_active)
+    fn get_name(&self, menu_id: MenuId) -> &str {
+        self.items
+            .get(&menu_id)
+            .expect("Menu item not found")
+            .menu_name
     }
+
+    fn switch_titles(&mut self, is_active: bool) {
+        for (_, menu_item) in self.items.iter_mut() {
+            let title = menu_item.get_actual_title(is_active).to_string();
+            menu_item.current_menu_item.set_title(&title);
+        }
+    }
+
 }
 
 fn main() {
@@ -127,25 +147,15 @@ fn main() {
     let icon = Icon::new();
     let is_active = service.is_active();
 
+    let mut status_menu_item = tray_menu.add_item(MenuItemAttributes::new("Status"));
+    let mut action_menu_item = tray_menu.add_item(MenuItemAttributes::new("Action"));
+    let mut quit_menu_item = tray_menu.add_item(MenuItemAttributes::new("Quit"));
+
     let mut menu_items = MenuItemCollection::new();
-    menu_items.add_item("status", MenuItem::new("Status: Started", "Status: Stopped"));
-    menu_items.add_item("action", MenuItem::new("Stop kerio-kvc service", "Start kerio-kvc service"));
-    menu_items.add_item("quit", MenuItem::new("Quit", "Quit"));
 
-    let mut status_menu_item = tray_menu
-        .add_item(MenuItemAttributes::new(
-            menu_items.get_actual_title("status", is_active)
-        ));
-
-    let mut action_menu_item = tray_menu
-        .add_item(MenuItemAttributes::new(
-            menu_items.get_actual_title("action", is_active)
-        ));
-
-    let quit_menu_item = tray_menu
-        .add_item(MenuItemAttributes::new(
-            menu_items.get_actual_title("quit", is_active)
-        ));
+    menu_items.add_item(MenuItem::new(status_menu_item, "status", "Status: Started", "Status: Stopped"));
+    menu_items.add_item(MenuItem::new(action_menu_item, "action", "Stop kerio-kvc service", "Start kerio-kvc service"));
+    menu_items.add_item(MenuItem::new(quit_menu_item, "quit", "Quit", "Quit"));
 
     let mut system_tray = SystemTrayBuilder::new(icon.actual(is_active), Some(tray_menu))
         .with_id(TrayId::new("main-tray"))
@@ -159,47 +169,38 @@ fn main() {
         match event {
             Event::MenuEvent {
                 menu_id,
-                // specify only context menu's
                 origin: MenuType::ContextMenu,
                 ..
             } => {
-                if menu_id == quit_menu_item.clone().id() {
-                    *control_flow = ControlFlow::Exit;
-                } else if menu_id == action_menu_item.clone().id() {
-                    let is_active = service.is_active();
-                    let status;
+                let menu = menu_items.get_name(menu_id);
+                dbg!(menu);
 
-                    if is_active {
-                        status = service.stop();
-                    } else {
-                        status = service.restart();
+                match menu {
+                    "quit" => *control_flow = ControlFlow::Exit,
+                    "action" => {
+                        let is_active = service.is_active();
+                        let status;
+
+                        if is_active {
+                            status = service.stop();
+                        } else {
+                            status = service.restart();
+                        }
+
+                        if status.success() {
+                            menu_items.switch_titles(!is_active);
+                            SystemTray::set_icon(&mut system_tray, icon.actual(!is_active));
+                        }
+                    },
+                    "status" => {
+                        let is_active = service.is_active();
+
+                        menu_items.switch_titles(is_active);
+                        SystemTray::set_icon(&mut system_tray, icon.actual(is_active));
                     }
-
-                    if status.success() {
-                        status_menu_item.set_title(
-                            menu_items.get_actual_title("status", !is_active)
-                        );
-
-                        action_menu_item.set_title(
-                            menu_items.get_actual_title("action", !is_active)
-                        );
-
-                        SystemTray::set_icon(&mut system_tray, icon.actual(!is_active));
-                    }
-
-                } else if menu_id == status_menu_item.clone().id() {
-                    let is_active = service.is_active();
-
-                    status_menu_item.set_title(
-                        menu_items.get_actual_title("status", is_active)
-                    );
-
-                    action_menu_item.set_title(
-                        menu_items.get_actual_title("action", is_active)
-                    );
-
-                    SystemTray::set_icon(&mut system_tray, icon.actual(is_active));
+                    _ => ()
                 }
+
             },
             _ => (),
         }
