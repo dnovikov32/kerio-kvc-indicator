@@ -175,8 +175,6 @@ fn main() {
         )
     );
 
-    menu_items.switch_titles(is_active);
-
     let mut system_tray = SystemTrayBuilder::new(icon.get_actual_icon(is_active), Some(tray_menu))
         .with_id(TrayId::new("main-tray"))
         .with_temp_icon_dir(std::path::Path::new("/tmp/kerio-kvc-indicator"))
@@ -185,6 +183,11 @@ fn main() {
 
     event_loop.run(move |event, _event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
+
+        let is_active = service.is_active();
+
+        menu_items.switch_titles(is_active);
+        SystemTray::set_icon(&mut system_tray, icon.get_actual_icon(is_active));
 
         match event {
             Event::MenuEvent {
@@ -197,7 +200,6 @@ fn main() {
                 match menu_name {
                     "quit" => *control_flow = ControlFlow::Exit,
                     "action" => {
-                        let is_active = service.is_active();
                         let status;
 
                         if is_active {
@@ -212,8 +214,6 @@ fn main() {
                         }
                     },
                     "status" => {
-                        let is_active = service.is_active();
-
                         menu_items.switch_titles(is_active);
                         SystemTray::set_icon(&mut system_tray, icon.get_actual_icon(is_active));
                     }
